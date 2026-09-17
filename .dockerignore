@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+Dockerfile
+dist
+.vscode
+.git
+**/node_modules
+**/dist
+**/*.log

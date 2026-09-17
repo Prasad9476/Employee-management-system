@@ -1,0 +1,88 @@
+# Render Blueprint for EMS Pro
+# ---------------------------------------------------------------------------
+# Three resources: a managed Postgres database, the API as a Docker web
+# service, and the React SPA as a static site served from Render's CDN.
+#
+# The SPA is cross-origin to the API, but both live on *.onrender.com
+# subdomains, so they are same-site: the httpOnly refresh cookie
+# (SameSite=Lax, Secure) is still sent, and the server's CORS config
+# (CLIENT_URL) allows credentialed requests. No code changes required.
+#
+# Deploy: push this repo to GitHub, then in the Render Dashboard choose
+#   New > Blueprint > connect the repo. Fill in the prompted secrets.
+# See README "Deploy to Render" for the exact values to enter.
+
+services:
+  # ---- Express + Prisma API -------------------------------------------------
+  - type: web
+    name: ems-pro-api
+    runtime: docker
+    plan: free # auto-sleeps after 15 min idle on the free plan
+    region: oregon
+    branch: main
+    autoDeployTrigger: commit
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - server/**
+        - render.yaml
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ems-pro-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false # openssl rand -hex 32
+      - key: CLIENT_URL
+        sync: false # exact URL of the static site, e.g. https://ems-pro-web.onrender.com
+      - key: NODE_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true" # Render serves HTTPS; refresh cookie must be Secure
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false # optional - only needed for file uploads
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false # optional - without it, invite/reset emails are only logged
+      - key: EMAIL_FROM
+        value: "EMS Pro <onboarding@resend.dev>"
+
+  # ---- React + Vite SPA (static site / CDN) ---------------------------------
+  - type: web
+    name: ems-pro-web
+    runtime: static
+    branch: main
+    autoDeployTrigger: commit
+    buildCommand: cd client && npm ci && npm run build
+    staticPublishPath: ./client/dist
+    buildFilter:
+      paths:
+        - client/**
+        - render.yaml
+    headers:
+      # Hashed assets are immutable; cache them for a year.
+      - path: /assets/*
+        name: Cache-Control
+        value: "public, max-age=31536000, immutable"
+    routes:
+      # SPA fallback so client-side routes never 404 on refresh.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false # https://<api service>.onrender.com/api (set after the API hero deploys)
+
+# ---- Managed PostgreSQL -----------------------------------------------------
+databases:
+  - name: ems-pro-db
+    databaseName: ems_pro
+    user: ems_pro
+    plan: free # free Postgres expires after 30 days - upgrade before then
+    postgresMajorVersion: "16"
+    ipAllowList: [] # accessible from other Render services in the same region only

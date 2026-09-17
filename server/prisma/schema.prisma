@@ -1,0 +1,273 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id            String          @id @default(cuid())
+  name          String          @unique
+  domain        String?         @unique
+  users         User[]
+  departments   Department[]
+  roles         Role[]
+  employees     Employee[]
+  attendances   Attendance[]
+  leaves        Leave[]
+  payrolls      Payroll[]
+  performances  Performance[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  leaveBalances LeaveBalance[]
+  employeeCounter EmployeeCounter?
+}
+
+model User {
+  id                  String         @id @default(cuid())
+  email               String
+  password            String
+  name                String
+  role                String         @default("Employee")
+  tenantId            String
+  tenant              Tenant         @relation(fields: [tenantId], references: [id])
+  mustChangePassword  Boolean        @default(false)
+  lastPasswordChange  DateTime?
+  createdAt           DateTime       @default(now())
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  employee            Employee?
+  refreshTokens       RefreshToken[]
+  authTokens          AuthToken[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model AuthToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  kind      String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model EmployeeCounter {
+  tenantId String @id
+  value    Int    @default(0)
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model Employee {
+  id                       String         @id @default(cuid())
+  tenantId                 String
+  tenant                   Tenant         @relation(fields: [tenantId], references: [id])
+  userId                   String?        @unique
+  user                     User?          @relation(fields: [userId], references: [id])
+  employeeId               String
+  firstName                String
+  lastName                 String
+  email                    String
+  phone                    String?
+  departmentId             String
+  roleId                   String
+  salary                   Float
+  joinDate                 DateTime
+  status                   String         @default("Active")
+  employmentType           String         @default("FullTime")
+  workMode                 String         @default("Onsite")
+  location                 String?
+  probationEndDate         DateTime?
+  confirmationDate         DateTime?
+  resignationDate          DateTime?
+  lastWorkingDay           DateTime?
+  managerId                String?
+  manager                  Employee?      @relation("EmployeeManager", fields: [managerId], references: [id])
+  reports                  Employee[]     @relation("EmployeeManager")
+  avatarUrl                String?
+  resumeUrl                String?
+  documents                Json?
+  skills                   String         @default("")
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  createdAt                DateTime       @default(now())
+
+  department    Department     @relation(fields: [departmentId], references: [id])
+  role          Role           @relation(fields: [roleId], references: [id])
+  attendance    Attendance[]
+  leaves        Leave[]
+  payrolls      Payroll[]
+  performance   Performance[]
+  leaveBalances LeaveBalance[]
+
+  @@unique([tenantId, employeeId])
+  @@unique([tenantId, email])
+  @@index([tenantId, departmentId])
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  name      String
+  headId    String?
+  budget    Float?
+  employees Employee[]
+
+  @@unique([tenantId, name])
+}
+
+model Role {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  name      String
+  employees Employee[]
+
+  @@unique([tenantId, name])
+}
+
+model Attendance {
+  id               String    @id @default(cuid())
+  employeeId       String
+  tenantId         String
+  date             DateTime
+  checkIn          DateTime?
+  checkOut         DateTime?
+  status           String
+  workMinutes      Int?
+  overtimeMinutes  Int       @default(0)
+  earlyCheckout    Boolean   @default(false)
+  employee         Employee  @relation(fields: [employeeId], references: [id])
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, employeeId, date])
+  @@index([tenantId, date])
+  @@index([tenantId, employeeId])
+}
+
+model Leave {
+  id               String   @id @default(cuid())
+  employeeId       String
+  tenantId         String
+  type             String
+  fromDate         DateTime
+  toDate           DateTime
+  reason           String
+  status           String   @default("Pending")
+  isHalfDay        Boolean  @default(false)
+  approvalComment  String?
+  createdAt        DateTime @default(now())
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([tenantId, employeeId])
+  @@index([tenantId, fromDate])
+  @@index([tenantId, createdAt])
+}
+
+model LeaveBalance {
+  id         String   @id @default(cuid())
+  tenantId   String
+  employeeId String
+  type       String
+  allocated  Float
+  used       Float    @default(0)
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([employeeId, type])
+  @@index([tenantId])
+}
+
+model Payroll {
+  id          String   @id @default(cuid())
+  employeeId  String
+  tenantId    String
+  month       DateTime
+  basicSalary Float
+  allowances  Float
+  deductions  Float
+  netPay      Float
+  status      String   @default("Pending")
+  createdAt   DateTime @default(now())
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, employeeId, month])
+  @@index([tenantId, employeeId])
+  @@index([tenantId, status])
+  @@index([tenantId, month])
+}
+
+model Performance {
+  id          String   @id @default(cuid())
+  employeeId  String
+  tenantId    String
+  reviewDate  DateTime
+  score       Float
+  category    String?
+  comments    String?
+  reviewedBy  String?
+  createdAt   DateTime @default(now())
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, employeeId])
+  @@index([tenantId, reviewDate])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  type      String
+  message   String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@index([tenantId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity])
+  @@index([tenantId, userId])
+}
